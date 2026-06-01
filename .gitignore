@@ -17,3 +17,6 @@ volumes/
 .DS_Store
 data/
 .worktrees/
+
+# test
+tests/
