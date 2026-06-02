@@ -4,7 +4,6 @@ import os
 import sys
 from uuid import uuid4
 
-from dotenv import load_dotenv
 from langsmith import evaluate
 
 # 项目根目录加入 sys.path，以便使用 backend 包导入
@@ -12,9 +11,11 @@ project_root = os.path.dirname(__file__)
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-chat_with_agent = importlib.import_module("backend.chat.service").chat_with_agent
+from backend.env import load_env
 
-load_dotenv()
+load_env()
+
+chat_with_agent = importlib.import_module("backend.chat.service").chat_with_agent
 
 
 def _extract_answer(outputs: Any) -> str:

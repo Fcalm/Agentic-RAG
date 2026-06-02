@@ -7,10 +7,7 @@ import threading
 from collections import Counter
 from pathlib import Path
 
-from dotenv import load_dotenv
 from langchain_huggingface import HuggingFaceEmbeddings
-
-load_dotenv()
 
 _DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "data" / "bm25_state.json"
 

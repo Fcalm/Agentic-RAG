@@ -2,14 +2,11 @@ import os
 from typing import Optional
 
 import requests
-from dotenv import load_dotenv
 
 try:
     from langchain_core.tools import tool
 except ImportError:
     from langchain_core.tools import tool
-
-load_dotenv()
 
 AMAP_WEATHER_API = os.getenv("AMAP_WEATHER_API")
 AMAP_API_KEY = os.getenv("AMAP_API_KEY")

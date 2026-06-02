@@ -1,6 +1,5 @@
 from typing import Literal, TypedDict, List, Optional
 import os
-from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
 from langgraph.graph import StateGraph, END
 from pydantic import BaseModel, Field
@@ -14,8 +13,6 @@ from backend.rag.utils import (
     merge_retrieval_trace,
 )
 from backend.chat.streaming import emit_rag_step
-
-load_dotenv()
 
 API_KEY = os.getenv("ARK_API_KEY")
 MODEL = os.getenv("MODEL")
@@ -132,6 +129,8 @@ def retrieve_initial(state: RAGState) -> RAGState:
         ),
     )
     emit_rag_step("✅", f"检索完成，找到 {len(results)} 个片段", f"模式: {retrieve_meta.get('retrieval_mode', 'hybrid')}")
+    if not results:
+        emit_rag_step("⚠️", "无可用片段，跳过评估并强制 step-back 扩展检索")
     rag_trace = {
         "tool_used": True,
         "tool_name": "search_knowledge_base",
@@ -148,6 +147,12 @@ def retrieve_initial(state: RAGState) -> RAGState:
         "context": context,
         "rag_trace": rag_trace,
     }
+
+
+def _route_after_initial(state: RAGState) -> Literal["grade_documents", "rewrite_question"]:
+    if not state.get("docs"):
+        return "rewrite_question"
+    return "grade_documents"
 
 
 def grade_documents_node(state: RAGState) -> RAGState:
@@ -186,24 +191,29 @@ def grade_documents_node(state: RAGState) -> RAGState:
 
 def rewrite_question_node(state: RAGState) -> RAGState:
     question = state["question"]
+    force_step_back = not state.get("docs")
     emit_rag_step("✏️", "正在重写查询...")
-    router = _get_router_model()
-    strategy = "step_back"
-    if router:
-        prompt = (
-            "请根据用户问题选择最合适的查询扩展策略，仅输出策略名。\n"
-            "- step_back：包含具体名称、日期、代码等细节，需要先理解通用概念的问题。\n"
-            "- hyde：模糊、概念性、需要解释或定义的问题。\n"
-            "- complex：多步骤、需要分解或综合多种信息的复杂问题。\n"
-            f"用户问题：{question}"
-        )
-        try:
-            decision = router.with_structured_output(RewriteStrategy).invoke(
-                [{"role": "user", "content": prompt}]
+
+    if force_step_back:
+        strategy = "step_back"
+    else:
+        router = _get_router_model()
+        strategy = "step_back"
+        if router:
+            prompt = (
+                "请根据用户问题选择最合适的查询扩展策略，仅输出策略名。\n"
+                "- step_back：包含具体名称、日期、代码等细节，需要先理解通用概念的问题。\n"
+                "- hyde：模糊、概念性、需要解释或定义的问题。\n"
+                "- complex：多步骤、需要分解或综合多种信息的复杂问题。\n"
+                f"用户问题：{question}"
             )
-            strategy = decision.strategy
-        except Exception:
-            strategy = "step_back"
+            try:
+                decision = router.with_structured_output(RewriteStrategy).invoke(
+                    [{"role": "user", "content": prompt}]
+                )
+                strategy = decision.strategy
+            except Exception:
+                strategy = "step_back"
 
     expanded_query = question
     step_back_question = ""
@@ -217,7 +227,7 @@ def rewrite_question_node(state: RAGState) -> RAGState:
         step_back_answer = step_back.get("step_back_answer", "")
         expanded_query = step_back.get("expanded_query", question)
 
-    if strategy in ("hyde", "complex"):
+    if not force_step_back and strategy in ("hyde", "complex"):
         emit_rag_step("📝", "HyDE 假设性文档生成中...")
         hypothetical_doc = generate_hypothetical_document(question)
 
@@ -225,6 +235,7 @@ def rewrite_question_node(state: RAGState) -> RAGState:
     rag_trace.update({
         "rewrite_strategy": strategy,
         "rewrite_query": expanded_query,
+        "grade_skipped": force_step_back,
     })
 
     return {
@@ -313,7 +324,14 @@ def build_rag_graph():
     graph.add_node("retrieve_expanded", retrieve_expanded)
 
     graph.set_entry_point("retrieve_initial")
-    graph.add_edge("retrieve_initial", "grade_documents")
+    graph.add_conditional_edges(
+        "retrieve_initial",
+        _route_after_initial,
+        {
+            "grade_documents": "grade_documents",
+            "rewrite_question": "rewrite_question",
+        },
+    )
     graph.add_conditional_edges(
         "grade_documents",
         lambda state: state.get("route"),

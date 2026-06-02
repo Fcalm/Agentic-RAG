@@ -2,14 +2,14 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 # 支持 `python backend/app.py` 与 `uvicorn backend.app:app` 两种启动方式
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-load_dotenv(_ROOT / ".env")
+from backend.env import PROJECT_ROOT, load_env
+
+load_env()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,8 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.api import router
 from backend.infra.database import init_db
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 
 def create_app() -> FastAPI:

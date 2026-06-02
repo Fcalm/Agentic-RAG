@@ -1,12 +1,9 @@
 import os
 
-from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.chat_models import init_chat_model
 
 from backend.tools import get_current_weather, search_knowledge_base
-
-load_dotenv()
 
 API_KEY = os.getenv("ARK_API_KEY")
 MODEL = os.getenv("MODEL")

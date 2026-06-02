@@ -3,14 +3,11 @@ from typing import List, Tuple, Dict, Any, Optional
 import os
 import json
 import requests
-from dotenv import load_dotenv
 
 from backend.indexing.milvus_client import get_milvus_store
 from backend.indexing.embedding import embedding_service as _embedding_service
 from backend.indexing.parent_chunk_store import ParentChunkStore
 from langchain.chat_models import init_chat_model
-
-load_dotenv()
 
 ARK_API_KEY = os.getenv("ARK_API_KEY")
 MODEL = os.getenv("MODEL")
@@ -30,6 +27,16 @@ def _read_positive_int_env(name: str, default: int) -> int:
 
 RETRIEVAL_CANDIDATE_MULTIPLIER = _read_positive_int_env("RETRIEVAL_CANDIDATE_MULTIPLIER", 3)
 _RETRIEVAL_CANDIDATE_K_RAW = os.getenv("RETRIEVAL_CANDIDATE_K", "").strip()
+
+
+def _read_float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+RERANK_MIN_SCORE = _read_float_env("RERANK_MIN_SCORE", 0.0)
 
 RETRIEVAL_TRACE_FIELDS = (
     "retrieval_pipeline",
@@ -53,6 +60,10 @@ RETRIEVAL_TRACE_FIELDS = (
     "rerank_model",
     "rerank_endpoint",
     "rerank_error",
+    "rerank_min_score",
+    "post_rerank_count",
+    "post_threshold_count",
+    "retrieval_empty",
 )
 
 # 全局初始化检索依赖（与 api 共用 embedding_service，保证 BM25 状态一致）
@@ -128,6 +139,13 @@ def _effective_score(doc: dict) -> Optional[float]:
     if score is not None:
         return float(score)
     return None
+
+
+def _meets_rerank_min_score(doc: dict) -> bool:
+    score = _effective_score(doc)
+    if score is None:
+        return RERANK_MIN_SCORE <= 0
+    return score >= RERANK_MIN_SCORE
 
 
 def _merge_rank_score_into(target: dict, source: dict) -> None:
@@ -384,9 +402,11 @@ def _finalize_retrieval(
     candidate_k: int,
     candidate_config: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """生产流水线：召回候选 → Auto-merge → Rerank 截断 top_k。"""
+    """生产流水线：召回候选 → Auto-merge → Rerank（top_k）→ 阈值过滤。"""
     candidates, merge_meta = _auto_merge_candidates(retrieved)
-    final_docs, rerank_meta = _rerank_documents(query=query, docs=candidates, top_k=top_k)
+    reranked_docs, rerank_meta = _rerank_documents(query=query, docs=candidates, top_k=top_k)
+    post_rerank_count = len(reranked_docs)
+    final_docs = [d for d in reranked_docs if _meets_rerank_min_score(d)]
     meta = {
         **rerank_meta,
         **merge_meta,
@@ -397,6 +417,10 @@ def _finalize_retrieval(
         "retrieval_top_k": top_k,
         "leaf_retrieve_level": LEAF_RETRIEVE_LEVEL,
         "recall_count": len(retrieved),
+        "rerank_min_score": RERANK_MIN_SCORE,
+        "post_rerank_count": post_rerank_count,
+        "post_threshold_count": len(final_docs),
+        "retrieval_empty": len(final_docs) == 0,
     }
     return {"docs": final_docs, "meta": meta}
 
@@ -458,5 +482,9 @@ def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
                     "recall_count": 0,
                     **_empty_merge_meta(),
                     "candidate_count": 0,
+                    "rerank_min_score": RERANK_MIN_SCORE,
+                    "post_rerank_count": 0,
+                    "post_threshold_count": 0,
+                    "retrieval_empty": True,
                 },
             }
