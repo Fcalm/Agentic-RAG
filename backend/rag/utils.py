@@ -431,11 +431,10 @@ def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
     try:
         dense_embeddings = _embedding_service.get_embeddings([query])
         dense_embedding = dense_embeddings[0]
-        sparse_embedding = _embedding_service.get_sparse_embedding(query)
 
         retrieved = _milvus_manager.hybrid_retrieve(
             dense_embedding=dense_embedding,
-            sparse_embedding=sparse_embedding,
+            query=query,
             top_k=candidate_k,
             filter_expr=filter_expr,
         )

@@ -6,6 +6,17 @@ from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, Un
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
+def sanitize_text(text: str) -> str:
+    """过滤、擦除不可转为 UTF-8 的孤立代理字符 (Surrogates) 以及 PostgreSQL 不允许的 \x00 (NUL) 空字节。"""
+    if not text:
+        return ""
+    text = text.replace("\x00", "")
+    try:
+        return text.encode("utf-8", "ignore").decode("utf-8")
+    except Exception:
+        return text
+
+
 class DocumentLoader:
     """文档加载和分片服务"""
 
@@ -136,13 +147,13 @@ class DocumentLoader:
             except (TypeError, ValueError):
                 page_num = 0
             base_doc = {
-                "filename": filename,
-                "file_path": file_path,
-                "file_type": doc_type,
+                "filename": sanitize_text(filename),
+                "file_path": sanitize_text(file_path),
+                "file_type": sanitize_text(doc_type),
                 "page_number": page_num,
             }
             page_chunks = self._split_page_to_three_levels(
-                text=(doc.page_content or "").strip(),
+                text=sanitize_text((doc.page_content or "").strip()),
                 base_doc=base_doc,
                 page_global_chunk_idx=page_global_chunk_idx,
             )

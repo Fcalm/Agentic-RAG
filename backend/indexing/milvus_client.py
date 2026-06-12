@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable, Iterator, TypeVar
 
-from pymilvus import AnnSearchRequest, DataType, MilvusClient, RRFRanker
+from pymilvus import AnnSearchRequest, DataType, MilvusClient, RRFRanker, Function, FunctionType
 
 QUERY_MAX_LIMIT = 16384
 T = TypeVar("T")
@@ -79,7 +79,14 @@ class MilvusStore:
         schema.add_field("id", DataType.INT64, is_primary=True, auto_id=True)
         schema.add_field("dense_embedding", DataType.FLOAT_VECTOR, dim=dense_dim)
         schema.add_field("sparse_embedding", DataType.SPARSE_FLOAT_VECTOR)
-        schema.add_field("text", DataType.VARCHAR, max_length=2000)
+        schema.add_field(
+            "text",
+            DataType.VARCHAR,
+            max_length=65535,
+            enable_analyzer=True,
+            analyzer_params={"type": "chinese"},
+            enable_match=True,
+        )
         schema.add_field("filename", DataType.VARCHAR, max_length=255)
         schema.add_field("file_type", DataType.VARCHAR, max_length=50)
         schema.add_field("file_path", DataType.VARCHAR, max_length=1024)
@@ -89,6 +96,14 @@ class MilvusStore:
         schema.add_field("parent_chunk_id", DataType.VARCHAR, max_length=512)
         schema.add_field("root_chunk_id", DataType.VARCHAR, max_length=512)
         schema.add_field("chunk_level", DataType.INT64)
+
+        bm25_function = Function(
+            name="text_bm25_emb",
+            function_type=FunctionType.BM25,
+            input_field_names=["text"],
+            output_field_names=["sparse_embedding"],
+        )
+        schema.add_function(bm25_function)
 
         index_params = client.prepare_index_params()
         index_params.add_index(
@@ -100,7 +115,7 @@ class MilvusStore:
         index_params.add_index(
             field_name="sparse_embedding",
             index_type="SPARSE_INVERTED_INDEX",
-            metric_type="IP",
+            metric_type="BM25",
             params={"drop_ratio_build": 0.2},
         )
         client.create_collection(
@@ -192,7 +207,7 @@ class MilvusStore:
     def hybrid_retrieve(
         self,
         dense_embedding: list[float],
-        sparse_embedding: dict,
+        query: str,
         top_k: int = 5,
         rrf_k: int = 60,
         filter_expr: str = "",
@@ -216,9 +231,9 @@ class MilvusStore:
             expr=filter_expr,
         )
         sparse_search = AnnSearchRequest(
-            data=[sparse_embedding],
+            data=[query],
             anns_field="sparse_embedding",
-            param={"metric_type": "IP", "params": {"drop_ratio_search": 0.2}},
+            param={"metric_type": "BM25", "params": {"drop_ratio_search": 0.2}},
             limit=top_k * 2,
             expr=filter_expr,
         )

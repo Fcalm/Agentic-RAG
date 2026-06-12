@@ -17,8 +17,6 @@ class MilvusWriter:
             return
 
         dense_dim = int(os.getenv("DENSE_EMBEDDING_DIM", "1024"))
-        all_texts = [doc["text"] for doc in documents]
-        self.embedding_service.increment_add_documents(all_texts)
 
         total = len(documents)
         with self.milvus_manager.session() as client:
@@ -27,12 +25,11 @@ class MilvusWriter:
             for i in range(0, total, batch_size):
                 batch = documents[i : i + batch_size]
                 texts = [doc["text"] for doc in batch]
-                dense_embeddings, sparse_embeddings = self.embedding_service.get_all_embeddings(texts)
+                dense_embeddings = self.embedding_service.get_embeddings(texts)
 
                 insert_data = [
                     {
                         "dense_embedding": dense_emb,
-                        "sparse_embedding": sparse_emb,
                         "text": doc["text"],
                         "filename": doc["filename"],
                         "file_type": doc["file_type"],
@@ -44,7 +41,7 @@ class MilvusWriter:
                         "root_chunk_id": doc.get("root_chunk_id", ""),
                         "chunk_level": doc.get("chunk_level", 0),
                     }
-                    for doc, dense_emb, sparse_emb in zip(batch, dense_embeddings, sparse_embeddings)
+                    for doc, dense_emb in zip(batch, dense_embeddings)
                 ]
 
                 client.insert(self.milvus_manager.collection_name, insert_data)
