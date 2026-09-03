@@ -9,7 +9,7 @@
 
     <div class="message-column">
       <div v-if="!msg.isUser" class="message-author">
-        <span>喵喵助手</span>
+        <span>企业RAG系统</span>
         <small v-if="msg.ragTrace?.retrieved_chunks?.length">
           已引用 {{ msg.ragTrace.retrieved_chunks.length }} 个来源
         </small>

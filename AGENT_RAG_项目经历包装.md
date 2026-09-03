@@ -1,4 +1,4 @@
-# SuperMew（喵喵助手）AGENT-RAG 项目经历包装
+# SuperMew（企业RAG系统）AGENT-RAG 项目经历包装
 
 > 用途：AI Agent 产品经理求职，将本项目转化为简历项目经历。
 > 定位一句话：**一个"可解释、可控成本、可人工介入"的企业级知识库 Agent 产品**（LangChain Agent + 自研 RAG 链路 + 现代化前端）。

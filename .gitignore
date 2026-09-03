@@ -16,6 +16,7 @@ volumes/
 # OS files
 .DS_Store
 data/
+models/
 .worktrees/
 
 # Node / Frontend development

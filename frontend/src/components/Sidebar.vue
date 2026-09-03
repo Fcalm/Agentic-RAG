@@ -5,7 +5,7 @@
         <i class="fa-solid fa-cat"></i>
       </div>
       <div class="brand-copy">
-        <h1>喵喵助手</h1>
+        <h1>企业RAG系统</h1>
         <span>Knowledge Copilot</span>
       </div>
     </div>
