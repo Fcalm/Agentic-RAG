@@ -2,7 +2,7 @@ from datetime import datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from backend.db.models import ChatMessage, ChatSession, User
+from backend.db.models import ChatMessage, ChatSession
 from backend.infra.cache import cache
 from backend.infra.database import SessionLocal
 from backend.schemas.chat import normalize_rag_trace
@@ -12,12 +12,12 @@ class ConversationStorage:
     """对话存储（PostgreSQL + Redis）。"""
 
     @staticmethod
-    def _messages_cache_key(user_id: str, session_id: str) -> str:
-        return f"chat_messages:{user_id}:{session_id}"
+    def _messages_cache_key(session_id: str) -> str:
+        return f"chat_messages:{session_id}"
 
     @staticmethod
-    def _sessions_cache_key(user_id: str) -> str:
-        return f"chat_sessions:{user_id}"
+    def _sessions_cache_key() -> str:
+        return "chat_sessions"
 
     @staticmethod
     def _to_langchain_messages(records: list[dict]) -> list:
@@ -44,7 +44,6 @@ class ConversationStorage:
 
     def save(
         self,
-        user_id: str,
         session_id: str,
         messages: list,
         metadata: dict = None,
@@ -52,17 +51,13 @@ class ConversationStorage:
     ):
         db = SessionLocal()
         try:
-            user = db.query(User).filter(User.username == user_id).first()
-            if not user:
-                return
-
             session = (
                 db.query(ChatSession)
-                .filter(ChatSession.user_id == user.id, ChatSession.session_id == session_id)
+                .filter(ChatSession.session_id == session_id)
                 .first()
             )
             if not session:
-                session = ChatSession(user_id=user.id, session_id=session_id, metadata_json=metadata or {})
+                session = ChatSession(session_id=session_id, metadata_json=metadata or {})
                 db.add(session)
                 db.flush()
             elif metadata is not None:
@@ -100,31 +95,28 @@ class ConversationStorage:
             session.updated_at = now
             db.commit()
 
-            cache.set_json(self._messages_cache_key(user_id, session_id), serialized)
-            cache.delete(self._sessions_cache_key(user_id))
+            cache.set_json(self._messages_cache_key(session_id), serialized)
+            cache.delete(self._sessions_cache_key())
         finally:
             db.close()
 
-    def load(self, user_id: str, session_id: str) -> list:
-        cached = cache.get_json(self._messages_cache_key(user_id, session_id))
+    def load(self, session_id: str) -> list:
+        cached = cache.get_json(self._messages_cache_key(session_id))
         if cached is not None:
             return self._to_langchain_messages(cached)
 
-        records = self.get_session_messages(user_id, session_id)
-        cache.set_json(self._messages_cache_key(user_id, session_id), records)
+        records = self.get_session_messages(session_id)
+        cache.set_json(self._messages_cache_key(session_id), records)
         return self._to_langchain_messages(records)
 
-    def load_with_meta(self, user_id: str, session_id: str) -> tuple[list, dict]:
+    def load_with_meta(self, session_id: str) -> tuple[list, dict]:
         """加载对话消息及会话元数据（标题、持久化笔记等）。"""
-        messages = self.load(user_id, session_id)
+        messages = self.load(session_id)
         db = SessionLocal()
         try:
-            user = db.query(User).filter(User.username == user_id).first()
-            if not user:
-                return messages, {}
             session = (
                 db.query(ChatSession)
-                .filter(ChatSession.user_id == user.id, ChatSession.session_id == session_id)
+                .filter(ChatSession.session_id == session_id)
                 .first()
             )
             if not session:
@@ -133,23 +125,18 @@ class ConversationStorage:
         finally:
             db.close()
 
-    def list_sessions(self, user_id: str) -> list:
-        return [item["session_id"] for item in self.list_session_infos(user_id)]
+    def list_sessions(self) -> list:
+        return [item["session_id"] for item in self.list_session_infos()]
 
-    def list_session_infos(self, user_id: str) -> list[dict]:
-        cached = cache.get_json(self._sessions_cache_key(user_id))
+    def list_session_infos(self) -> list[dict]:
+        cached = cache.get_json(self._sessions_cache_key())
         if cached is not None:
             return cached
 
         db = SessionLocal()
         try:
-            user = db.query(User).filter(User.username == user_id).first()
-            if not user:
-                return []
-
             sessions = (
                 db.query(ChatSession)
-                .filter(ChatSession.user_id == user.id)
                 .order_by(ChatSession.updated_at.desc())
                 .all()
             )
@@ -165,27 +152,24 @@ class ConversationStorage:
                         "message_count": count,
                     }
                 )
-            cache.set_json(self._sessions_cache_key(user_id), result)
+            cache.set_json(self._sessions_cache_key(), result)
             return result
         finally:
             db.close()
 
-    def get_session_messages(self, user_id: str, session_id: str) -> list[dict]:
-        cached = cache.get_json(self._messages_cache_key(user_id, session_id))
+    def get_session_messages(self, session_id: str) -> list[dict]:
+        cached = cache.get_json(self._messages_cache_key(session_id))
         if cached is not None:
             normalized = self._normalize_message_records(cached)
             if normalized != cached:
-                cache.set_json(self._messages_cache_key(user_id, session_id), normalized)
+                cache.set_json(self._messages_cache_key(session_id), normalized)
             return normalized
 
         db = SessionLocal()
         try:
-            user = db.query(User).filter(User.username == user_id).first()
-            if not user:
-                return []
             session = (
                 db.query(ChatSession)
-                .filter(ChatSession.user_id == user.id, ChatSession.session_id == session_id)
+                .filter(ChatSession.session_id == session_id)
                 .first()
             )
             if not session:
@@ -206,20 +190,17 @@ class ConversationStorage:
                 }
                 for row in rows
             ]
-            cache.set_json(self._messages_cache_key(user_id, session_id), result)
+            cache.set_json(self._messages_cache_key(session_id), result)
             return result
         finally:
             db.close()
 
-    def delete_session(self, user_id: str, session_id: str) -> bool:
+    def delete_session(self, session_id: str) -> bool:
         db = SessionLocal()
         try:
-            user = db.query(User).filter(User.username == user_id).first()
-            if not user:
-                return False
             session = (
                 db.query(ChatSession)
-                .filter(ChatSession.user_id == user.id, ChatSession.session_id == session_id)
+                .filter(ChatSession.session_id == session_id)
                 .first()
             )
             if not session:
@@ -227,8 +208,8 @@ class ConversationStorage:
 
             db.delete(session)
             db.commit()
-            cache.delete(self._messages_cache_key(user_id, session_id))
-            cache.delete(self._sessions_cache_key(user_id))
+            cache.delete(self._messages_cache_key(session_id))
+            cache.delete(self._sessions_cache_key())
             return True
         finally:
             db.close()

@@ -1,5 +1,5 @@
 import os
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 DATABASE_URL = os.getenv(
@@ -85,3 +85,50 @@ def init_db() -> None:
     import backend.db.models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _migrate_legacy_auth_schema()
+
+
+def _migrate_legacy_auth_schema() -> None:
+    """Convert pre-auth chat data into the single shared workspace schema.
+
+    Existing conversations are retained.  When two legacy accounts used the same
+    session id, all but the first are renamed with their database id so the new
+    globally unique session id constraint can be applied safely.
+    """
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if "chat_sessions" not in tables:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("chat_sessions")}
+    if "user_id" not in columns:
+        return
+    if engine.dialect.name != "postgresql":
+        raise RuntimeError(
+            "检测到旧版带用户鉴权的会话表。请使用 PostgreSQL 运行一次迁移后再切换数据库。"
+        )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                WITH ranked AS (
+                    SELECT id, session_id,
+                           row_number() OVER (PARTITION BY session_id ORDER BY id) AS position
+                    FROM chat_sessions
+                )
+                UPDATE chat_sessions AS sessions
+                SET session_id = left(ranked.session_id, 100) || '-legacy-' || ranked.id
+                FROM ranked
+                WHERE sessions.id = ranked.id AND ranked.position > 1
+                """
+            )
+        )
+        connection.execute(text("ALTER TABLE chat_sessions DROP COLUMN user_id CASCADE"))
+        connection.execute(
+            text(
+                "ALTER TABLE chat_sessions "
+                "ADD CONSTRAINT uq_chat_sessions_session_id UNIQUE (session_id)"
+            )
+        )
+        connection.execute(text("DROP TABLE IF EXISTS users"))

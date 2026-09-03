@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 class ChatRequestContext:
     """Request-owned state shared explicitly across agent tools and RAG nodes."""
 
-    user_id: str
     session_id: str
     output_queue: Optional[asyncio.Queue] = None
     loop: Optional[asyncio.AbstractEventLoop] = None
@@ -32,12 +31,10 @@ class ChatRequestContext:
     def for_stream(
         cls,
         *,
-        user_id: str,
         session_id: str,
         output_queue: asyncio.Queue,
     ) -> ChatRequestContext:
         return cls(
-            user_id=user_id,
             session_id=session_id,
             output_queue=output_queue,
             loop=asyncio.get_running_loop(),
@@ -47,10 +44,9 @@ class ChatRequestContext:
     def for_sync(
         cls,
         *,
-        user_id: str,
         session_id: str,
     ) -> ChatRequestContext:
-        return cls(user_id=user_id, session_id=session_id)
+        return cls(session_id=session_id)
 
     def emit_rag_step(
         self,

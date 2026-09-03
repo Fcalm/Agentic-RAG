@@ -1,6 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAuthStore } from './auth';
 import { useChatStore } from './chat';
 import { useSessionStore } from './sessions';
 import api from '@/utils/api';
@@ -107,15 +106,10 @@ const createControlledSseFetch = () => {
 const setupStores = () => {
   setActivePinia(createPinia());
 
-  const authStore = useAuthStore();
-  authStore.token = 'test-token';
-  authStore.currentUser = { username: 'tester', role: 'user' };
-
   const chatStore = useChatStore();
   chatStore.setViewedSession('session_current', []);
 
   return {
-    authStore,
     chatStore,
     sessionStore: useSessionStore(),
   };
@@ -129,7 +123,7 @@ describe('chat store streaming sessions', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('clears account-scoped chat state when the authenticated workspace changes', () => {
+  it('clears local chat state when the workspace is reset', () => {
     const { chatStore } = setupStores();
     const previousSessionId = chatStore.sessionId;
 

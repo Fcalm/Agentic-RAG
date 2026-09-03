@@ -346,7 +346,11 @@ REWRITE_PROMPT = (
     "约束：\n"
     "- method=step_back 时，只填写 step_back_question，hyde_document 必须留空。\n"
     "- method=hyde 时，只填写 hyde_document，step_back_question 必须留空。\n"
-    "- HyDE 文档只能用于检索，不代表真实证据，不要编造引用或来源。\n\n"
+    "- HyDE 文档只能用于检索，不代表真实证据，不要编造引用或来源。\n"
+    "请只输出一个 JSON 对象（不要 Markdown 代码块、不要额外文字），格式样例：\n"
+    '{{\"method\": \"step_back\", \"step_back_question\": \"更抽象的问题\", \"hyde_document\": \"\"}}\n'
+    "或者：\n"
+    '{{\"method\": \"hyde\", \"step_back_question\": \"\", \"hyde_document\": \"假设性答案文档\"}}\n\n'
     "用户问题：{query}"
 )
 
@@ -372,7 +376,7 @@ def rewrite_query_once(query: str) -> dict:
     if not model:
         raise RuntimeError("FAST_MODEL is required for query rewriting")
 
-    result = model.with_structured_output(RewritePlan).invoke(
+    result = model.with_structured_output(RewritePlan, method="json_mode").invoke(
         [{"role": "user", "content": REWRITE_PROMPT.format(query=query)}]
     )
     method = result.method

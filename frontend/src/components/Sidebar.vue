@@ -42,7 +42,6 @@
         </small>
       </button>
       <button
-        v-if="authStore.isAdmin"
         type="button"
         :class="['nav-btn', { active: chatStore.activeNav === 'settings' }]"
         aria-label="知识库"
@@ -53,7 +52,7 @@
       </button>
     </nav>
 
-    <template v-if="authStore.isAuthenticated">
+    <template>
       <div class="sidebar-section-label">最近会话</div>
       <div class="sidebar-recents">
         <button
@@ -88,18 +87,15 @@
         <ThemeToggle :theme="theme" @toggle="$emit('toggle-theme')" />
       </div>
 
-      <div v-if="authStore.isAuthenticated" class="user-panel">
-        <span class="user-avatar">{{ userInitials }}</span>
+      <div class="user-panel">
+        <span class="user-avatar"><i class="fa-solid fa-cat"></i></span>
         <span class="user-copy">
-          <strong>{{ authStore.currentUser?.username }}</strong>
-          <small>{{ roleLabel }}</small>
+          <strong>本地工作区</strong>
+          <small>无需登录</small>
         </span>
         <span class="user-actions">
           <button type="button" title="清空当前对话" aria-label="清空当前对话" @click="chatStore.handleClearChat">
             <i class="fa-regular fa-trash-can"></i>
-          </button>
-          <button type="button" title="退出登录" aria-label="退出登录" @click="onLogout">
-            <i class="fa-solid fa-arrow-right-from-bracket"></i>
           </button>
         </span>
       </div>
@@ -108,9 +104,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed, onMounted } from 'vue';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import { useAuthStore } from '@/stores/auth';
 import { useChatStore } from '@/stores/chat';
 import { useSessionStore } from '@/stores/sessions';
 
@@ -122,26 +117,16 @@ defineEmits<{
   (e: 'toggle-theme'): void;
 }>();
 
-const authStore = useAuthStore();
 const chatStore = useChatStore();
 const sessionStore = useSessionStore();
 
 const recentSessions = computed(() => sessionStore.sessions.slice(0, 4));
 
 const workspaceMeta = computed(() => {
-  if (!authStore.isAuthenticated) return '登录后连接私有知识';
-  return (sessionStore.sessions.length || 0) + ' 个会话 · 私有';
-});
-
-const roleLabel = computed(() => authStore.currentUser?.role === 'admin' ? '管理员' : '普通用户');
-
-const userInitials = computed(() => {
-  const name = authStore.currentUser?.username || 'ME';
-  return name.slice(0, 2).toUpperCase();
+  return (sessionStore.sessions.length || 0) + ' 个共享会话';
 });
 
 const refreshSessions = async () => {
-  if (!authStore.isAuthenticated) return;
   try {
     await sessionStore.fetchSessions();
     chatStore.mergeCachedSessionsIntoHistory();
@@ -150,13 +135,7 @@ const refreshSessions = async () => {
   }
 };
 
-watch(
-  () => authStore.isAuthenticated,
-  (isAuthenticated) => {
-    if (isAuthenticated) refreshSessions();
-  },
-  { immediate: true }
-);
+onMounted(refreshSessions);
 
 const onNewChat = () => {
   chatStore.handleNewChat();
@@ -176,10 +155,6 @@ const onHistory = async () => {
 };
 
 const onSettings = () => {
-  if (!authStore.isAdmin) {
-    alert('仅管理员可访问文档管理');
-    return;
-  }
   chatStore.activeNav = 'settings';
   sessionStore.showHistorySidebar = false;
 };
@@ -190,11 +165,6 @@ const onLoadSession = async (sessionId: string) => {
   } catch (error: any) {
     alert('加载会话失败：' + error.message);
   }
-};
-
-const onLogout = () => {
-  sessionStore.showHistorySidebar = false;
-  authStore.handleLogout();
 };
 
 const formatRelativeTime = (value: string) => {

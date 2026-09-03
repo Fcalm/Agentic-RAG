@@ -14,10 +14,10 @@ class FakeStorage:
         self.metadata = dict(metadata or {})
         self.saves = []
 
-    def load_with_meta(self, user_id, session_id):
+    def load_with_meta(self, session_id):
         return list(self.messages), dict(self.metadata)
 
-    def save(self, user_id, session_id, messages, metadata=None, extra_message_data=None):
+    def save(self, session_id, messages, metadata=None, extra_message_data=None):
         self.messages = list(messages)
         if metadata is not None:
             self.metadata = {**self.metadata, **metadata}
@@ -112,7 +112,7 @@ class ChatHitlResumeTests(unittest.IsolatedAsyncioTestCase):
             patch.object(service, "generate_session_title", Mock(return_value="短问题")),
             patch.object(service, "update_persistent_note", update_note),
         ):
-            chunks = await _collect_stream("你好", "u", "s")
+            chunks = await _collect_stream("你好", "s")
 
         events = _parse_sse_events(chunks)
         self.assertEqual("rag_step", events[0].get("type"))
@@ -152,7 +152,7 @@ class ChatHitlResumeTests(unittest.IsolatedAsyncioTestCase):
             patch.object(service, "generate_session_title", Mock(return_value="角色问题")),
             patch.object(service, "update_persistent_note", update_note),
         ):
-            chunks = await _collect_stream("这个角色的属性是什么？", "u", "s")
+            chunks = await _collect_stream("这个角色的属性是什么？", "s")
 
         events = _parse_sse_events(chunks)
         self.assertFalse([event for event in events if event.get("type") == "content"])
@@ -212,7 +212,7 @@ class ChatHitlResumeTests(unittest.IsolatedAsyncioTestCase):
             patch.object(service, "model", fake_model),
             patch.object(service, "update_persistent_note", AsyncMock(return_value="updated note")),
         ):
-            chunks = await _collect_stream("丹瑾", "u", "s")
+            chunks = await _collect_stream("丹瑾", "s")
 
         events = _parse_sse_events(chunks)
         self.assertEqual(["丹瑾是湮灭属性。[1]"], [

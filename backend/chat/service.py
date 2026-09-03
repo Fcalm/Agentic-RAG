@@ -312,10 +312,9 @@ def _update_persistent_note_sync(
 
 def chat_with_agent(
     user_text: str,
-    user_id: str = "default_user",
     session_id: str = "default_session",
 ):
-    messages, metadata = storage.load_with_meta(user_id, session_id)
+    messages, metadata = storage.load_with_meta(session_id)
     persistent_note = metadata.get("persistent_note", "")
     is_first_message = len(messages) == 0
     stored_pending_hitl = metadata.get(PENDING_HITL_KEY)
@@ -337,12 +336,12 @@ def chat_with_agent(
         else user_text
     )
 
-    ctx = ChatRequestContext.for_sync(user_id=user_id, session_id=session_id)
+    ctx = ChatRequestContext.for_sync(session_id=session_id)
     ctx.reset_knowledge_tool_budget()
 
     try:
         messages.append(HumanMessage(content=user_text))
-        storage.save(user_id, session_id, messages)
+        storage.save(session_id, messages)
 
         if is_hitl_resume and resume_state:
             rag_result = _resume_rag_from_hitl_sync(pending_hitl, user_text, ctx)
@@ -422,7 +421,6 @@ def chat_with_agent(
         messages.append(AIMessage(content=response_content))
         extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
         storage.save(
-            user_id,
             session_id,
             messages,
             metadata=save_meta,
@@ -439,7 +437,6 @@ def chat_with_agent(
 
 async def chat_with_agent_stream(
     user_text: str,
-    user_id: str = "default_user",
     session_id: str = "default_session",
 ):
     initial_step = {
@@ -454,7 +451,7 @@ async def chat_with_agent_stream(
     }
     yield f"data: {json.dumps(initial_step)}\n\n"
 
-    messages, metadata = storage.load_with_meta(user_id, session_id)
+    messages, metadata = storage.load_with_meta(session_id)
     persistent_note = metadata.get("persistent_note", "")
     is_first_message = len(messages) == 0
     stored_pending_hitl = metadata.get(PENDING_HITL_KEY)
@@ -478,7 +475,6 @@ async def chat_with_agent_stream(
 
     output_queue = asyncio.Queue()
     ctx = ChatRequestContext.for_stream(
-        user_id=user_id,
         session_id=session_id,
         output_queue=output_queue,
     )
@@ -486,7 +482,7 @@ async def chat_with_agent_stream(
 
     try:
         messages.append(HumanMessage(content=user_text))
-        storage.save(user_id, session_id, messages)
+        storage.save(session_id, messages)
 
         if is_hitl_resume and resume_state:
             loop = asyncio.get_running_loop()
@@ -568,7 +564,6 @@ async def chat_with_agent_stream(
             messages.append(AIMessage(content=full_response))
             extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
             storage.save(
-                user_id,
                 session_id,
                 messages,
                 metadata=save_meta,
@@ -695,7 +690,6 @@ async def chat_with_agent_stream(
         messages.append(AIMessage(content=full_response))
         extra_message_data = [None] * (len(messages) - 1) + [{"rag_trace": rag_trace}]
         storage.save(
-            user_id,
             session_id,
             messages,
             metadata=save_meta,

@@ -1,6 +1,6 @@
 import os
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 
 from backend.api.resources import (
     UPLOAD_DIR,
@@ -13,8 +13,6 @@ from backend.api.resources import (
     delete_document_transactionally,
     save_upload_file,
 )
-from backend.db.models import User
-from backend.infra.auth import require_admin
 from backend.jobs import DELETE_STEPS, delete_job_manager, upload_job_manager
 from backend.schemas import (
     DocumentDeleteJobResponse,
@@ -104,7 +102,7 @@ def _process_delete_job(job_id: str, filename: str) -> None:
 
 
 @router.get("/documents", response_model=DocumentListResponse)
-async def list_documents(_: User = Depends(require_admin)):
+async def list_documents():
     try:
         milvus_manager.init_collection()
         results = milvus_manager.query(
@@ -134,7 +132,6 @@ async def list_documents(_: User = Depends(require_admin)):
 async def upload_document_async(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    _: User = Depends(require_admin),
 ):
     filename = file.filename or ""
     if not filename:
@@ -163,7 +160,7 @@ async def upload_document_async(
 
 
 @router.get("/documents/upload/jobs/{job_id}", response_model=DocumentUploadJobResponse)
-async def get_upload_job(job_id: str, _: User = Depends(require_admin)):
+async def get_upload_job(job_id: str):
     job = upload_job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="上传任务不存在或已过期")
@@ -171,7 +168,7 @@ async def get_upload_job(job_id: str, _: User = Depends(require_admin)):
 
 
 @router.get("/documents/upload/jobs", response_model=list[DocumentUploadJobResponse])
-async def list_upload_jobs(_: User = Depends(require_admin)):
+async def list_upload_jobs():
     jobs = upload_job_manager.list_jobs()
     jobs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
     return [DocumentUploadJobResponse(**job) for job in jobs]
@@ -181,7 +178,6 @@ async def list_upload_jobs(_: User = Depends(require_admin)):
 async def delete_document_async(
     filename: str,
     background_tasks: BackgroundTasks,
-    _: User = Depends(require_admin),
 ):
     job = delete_job_manager.create_job(
         filename,
@@ -200,7 +196,7 @@ async def delete_document_async(
 
 
 @router.get("/documents/delete/jobs/{job_id}", response_model=DocumentDeleteJobResponse)
-async def get_delete_job(job_id: str, _: User = Depends(require_admin)):
+async def get_delete_job(job_id: str):
     job = delete_job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="删除任务不存在或已过期")
@@ -208,7 +204,7 @@ async def get_delete_job(job_id: str, _: User = Depends(require_admin)):
 
 
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
-async def upload_document(file: UploadFile = File(...), _: User = Depends(require_admin)):
+async def upload_document(file: UploadFile = File(...)):
     try:
         filename = file.filename or ""
         if not filename:
@@ -257,7 +253,7 @@ async def upload_document(file: UploadFile = File(...), _: User = Depends(requir
 
 
 @router.delete("/documents/{filename}", response_model=DocumentDeleteResponse)
-async def delete_document(filename: str, _: User = Depends(require_admin)):
+async def delete_document(filename: str):
     try:
         chunks_deleted = delete_document_transactionally(filename)
 

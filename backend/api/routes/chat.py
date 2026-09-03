@@ -1,22 +1,20 @@
 import json
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.chat import chat_with_agent, chat_with_agent_stream
-from backend.db.models import User
-from backend.infra.auth import get_current_user
 from backend.schemas import ChatRequest, ChatResponse
 
 router = APIRouter(tags=["chat"])
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_current_user)):
+async def chat_endpoint(request: ChatRequest):
     try:
         session_id = request.session_id or "default_session"
-        resp = chat_with_agent(request.message, current_user.username, session_id)
+        resp = chat_with_agent(request.message, session_id)
         if isinstance(resp, dict):
             return ChatResponse(**resp)
         return ChatResponse(response=resp)
@@ -40,13 +38,12 @@ async def chat_endpoint(request: ChatRequest, current_user: User = Depends(get_c
 
 
 @router.post("/chat/stream")
-async def chat_stream_endpoint(request: ChatRequest, current_user: User = Depends(get_current_user)):
+async def chat_stream_endpoint(request: ChatRequest):
     async def event_generator():
         try:
             session_id = request.session_id or "default_session"
             async for chunk in chat_with_agent_stream(
                 request.message,
-                current_user.username,
                 session_id,
             ):
                 yield chunk

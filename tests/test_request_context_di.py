@@ -18,12 +18,10 @@ class ChatRequestContextTests(unittest.IsolatedAsyncioTestCase):
         queue_a = asyncio.Queue()
         queue_b = asyncio.Queue()
         ctx_a = ChatRequestContext.for_stream(
-            user_id="a",
             session_id="s1",
             output_queue=queue_a,
         )
         ctx_b = ChatRequestContext.for_stream(
-            user_id="b",
             session_id="s2",
             output_queue=queue_b,
         )
@@ -60,8 +58,8 @@ class ChatRequestContextTests(unittest.IsolatedAsyncioTestCase):
 
 class KnowledgeToolFactoryTests(unittest.TestCase):
     def test_knowledge_tool_counter_is_per_context(self):
-        ctx_a = ChatRequestContext.for_sync(user_id="a", session_id="s1")
-        ctx_b = ChatRequestContext.for_sync(user_id="b", session_id="s2")
+        ctx_a = ChatRequestContext.for_sync(session_id="s1")
+        ctx_b = ChatRequestContext.for_sync(session_id="s2")
 
         try:
             self.assertTrue(ctx_a.acquire_knowledge_tool_slot())
@@ -91,8 +89,8 @@ class KnowledgeToolFactoryTests(unittest.TestCase):
 
         fake_pipeline.run_rag_graph = run_rag_graph
 
-        ctx_a = ChatRequestContext.for_sync(user_id="a", session_id="s1")
-        ctx_b = ChatRequestContext.for_sync(user_id="b", session_id="s2")
+        ctx_a = ChatRequestContext.for_sync(session_id="s1")
+        ctx_b = ChatRequestContext.for_sync(session_id="s2")
 
         try:
             tool_a = make_search_knowledge_base(ctx_a)

@@ -76,7 +76,12 @@ EVIDENCE_GRADE_PROMPT = (
     "  clarify: 缺少关键条件，需要用户补充。\n"
     "  scope_select: 多个候选方向都相关，需要用户选择。\n"
     "  no_knowledge: 无召回或主题不相关。\n"
-    "- 如果 route 是 clarify 或 scope_select，请给 hitl_prompt；如果能列出选项，请给 hitl_options。"
+    "- 如果 route 是 clarify 或 scope_select，请给 hitl_prompt；如果能列出选项，请给 hitl_options。\n"
+    "请只输出一个 JSON 对象（不要 Markdown 代码块、不要额外文字），字段和取值严格遵循上面的规则，"
+    "格式样例：\n"
+    '{{\"relevance\": \"strong\", \"answerability\": \"sufficient\", \"ambiguity\": \"none\", '
+    '\"route\": \"answer\", \"confidence\": 0.95, \"missing_slots\": [], \"hitl_prompt\": \"\", '
+    '\"hitl_options\": [], \"reason\": \"片段直接回答了问题\"}}'
 )
 
 
@@ -426,7 +431,7 @@ def grade_documents_node(state: RAGState) -> RAGState:
         question = state["question"]
         context = state.get("context", "")
         prompt = EVIDENCE_GRADE_PROMPT.format(question=question, context=context)
-        grade = grader.with_structured_output(EvidenceGrade).invoke(
+        grade = grader.with_structured_output(EvidenceGrade, method="json_mode").invoke(
             [{"role": "user", "content": prompt}]
         )
 
@@ -578,7 +583,10 @@ COMPLEXITY_PROMPT = (
     "需要综合多个信息源才能完整回答的问题。\n\n"
     "用户问题：{question}\n\n"
     "如果是复杂问题，请同时给出 2-4 个互不重叠、可独立检索的子问题；"
-    "如果是简单问题，sub_questions 留空。"
+    "如果是简单问题，sub_questions 留空。\n"
+    "请只输出一个 JSON 对象（不要 Markdown 代码块、不要额外文字），格式样例：\n"
+    '{{\"complexity\": \"complex\", \"reason\": \"需要跨文档综合\", '
+    '\"sub_questions\": [\"子问题1\", \"子问题2\"]}}'
 )
 
 _SIMPLE_QUERY_MARKERS = (
@@ -693,7 +701,7 @@ def classify_complexity(state: RAGState) -> RAGState:
         raise RuntimeError("FAST_MODEL is required for complexity planning")
 
     prompt = COMPLEXITY_PROMPT.format(question=question)
-    result = model.with_structured_output(ComplexityResult).invoke(
+    result = model.with_structured_output(ComplexityResult, method="json_mode").invoke(
         [{"role": "user", "content": prompt}]
     )
     complexity = (result.complexity or "simple").strip().lower()

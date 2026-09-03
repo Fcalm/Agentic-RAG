@@ -117,7 +117,7 @@ npm run build
 - **核心能力**：
   - LangChain Agent + 自定义工具。
   - 文档上传后执行三级滑动窗口分块，叶子分块向量化写入 Milvus，父级分块写入 PostgreSQL。
-  - 用户注册/登录、JWT 鉴权、基于角色的 RBAC 权限控制（admin/user）。
+  - 无需登录即可使用的共享知识库、文档管理与历史会话。
   - 会话记忆与摘要，聊天与历史记录落地 PostgreSQL，并引入 Redis 缓存热点会话与父文档。
 - **运行形态**：FastAPI 后端 + 现代工程化前端（Vite + Vue 3 + TypeScript + Pinia）+ Milvus 向量库。
 
@@ -184,35 +184,23 @@ npm run build
 
 ### 后端服务建设（本轮已完成）
 
-1. 账号体系与权限体系
-- 新增注册登录接口：`/auth/register`、`/auth/login`。
-- 新增用户信息接口：`/auth/me`。
-- 引入 JWT 鉴权中间能力：请求通过 Bearer Token 识别当前用户。
-- 权限隔离：
-  - `admin`：可执行文档上传、删除、文档列表查询。
-  - `user`：仅可聊天、查询和删除自己的会话历史。
-
-2. 数据库建模与持久化迁移
-- 使用 SQLAlchemy 建立核心模型：`User`、`ChatSession`、`ChatMessage`、`ParentChunk`。
+1. 数据库建模与持久化迁移
+- 使用 SQLAlchemy 建立核心模型：`ChatSession`、`ChatMessage`、`ParentChunk`。
 - 聊天历史由本地 JSON 迁移到 PostgreSQL。
 - 父级分块文档（L1/L2）由本地 JSON 迁移到 PostgreSQL。
 
-3. Redis 缓存策略
-- 会话消息缓存：按 `user + session` 维度缓存消息列表。
-- 会话列表缓存：按 `user` 维度缓存会话摘要列表。
+2. Redis 缓存策略
+- 会话消息缓存：按 `session` 维度缓存消息列表。
+- 会话列表缓存：缓存共享会话摘要列表。
 - 父文档缓存：按 `chunk_id` 缓存父级分块内容。
 - 写入/删除后执行缓存失效，保证一致性。
-
-4. 密码安全与兼容
-- 新注册用户采用 PBKDF2-SHA256 存储密码哈希（避免 bcrypt 后端兼容问题）。
-- 登录校验兼容历史 bcrypt 哈希，支持平滑迁移。
 
 ## 目录与架构
 - 后端：`backend/`（分层包结构，统一 `from backend.xxx import`）
   - [app.py](backend/app.py)：FastAPI 入口、CORS、静态资源挂载。
   - `api/`：HTTP 层
     - [router.py](backend/api/router.py)：路由聚合。
-    - `routes/`：`auth`、`sessions`、`chat`、`documents` 分文件。
+    - `routes/`：`sessions`、`chat`、`documents` 分文件。
     - [resources.py](backend/api/resources.py)：Milvus / 上传目录等共享资源。
   - `chat/`：对话域
     - [service.py](backend/chat/service.py)：非流式 / 流式聊天入口。
@@ -228,22 +216,21 @@ npm run build
     - [milvus_client.py](backend/indexing/milvus_client.py)、[milvus_writer.py](backend/indexing/milvus_writer.py)。
     - [parent_chunk_store.py](backend/indexing/parent_chunk_store.py)：父级分块 DocStore。
   - `tools/`：LangChain Agent 可调用的 `@tool`（天气、知识库检索）。
-  - `infra/`：[database.py](backend/infra/database.py)、[cache.py](backend/infra/cache.py)、[auth.py](backend/infra/auth.py)。
+  - `infra/`：[database.py](backend/infra/database.py)、[cache.py](backend/infra/cache.py)。
   - `db/`：[models.py](backend/db/models.py)：ORM 模型。
-  - `schemas/`：Pydantic 请求/响应（auth / chat / documents）。
+  - `schemas/`：Pydantic 请求/响应（chat / documents）。
   - `jobs/`：[upload_jobs.py](backend/jobs/upload_jobs.py)：异步上传/删除任务进度。
 - 前端：`frontend/`
   - 采用现代工程化设计（Vite + Vue 3 + TypeScript + Pinia + Axios + Sass）。
   - **前端工程架构与状态流**：
     - **Pinia 状态存储**：
-      - `stores/auth.ts`：处理 JWT 鉴权状态、用户注册与登录，维持 Bearer 鉴权请求。
       - `stores/sessions.ts`：负责多会话历史的创建、异步载入、删除与切换。
       - `stores/chat.ts`：缓存消息流，承载 RAG 各个阶段执行步骤的响应式更新。
       - `stores/documents.ts`：实现知识库文档的展示并配合接口轮询监听上传异步任务进度。
     - **精细化组件设计**：
       - `ThinkingTrace.vue` & `RetrievalTraceDetails.vue`：动态渲染子/主 Agent 思考状态（Searching, Grading, Rewriting 等步骤），支持展示每路子问题的合并与召回详情。
       - `References.vue`：折叠卡片展示知识库来源信息，含 RRF Rank、Rerank 语义得分、合并叶子块数、所处层级和页码。
-      - `UploadSection.vue` & `DocumentSettings.vue`：管理员控制面板，动态轮询监听并步进展示上传的多阶段状态机进度。
+      - `UploadSection.vue` & `DocumentSettings.vue`：知识库管理面板，动态轮询监听并步进展示上传的多阶段状态机进度。
     - **流式解包与主动终止**：
       - `utils/api.ts`：底层采用 `fetch` API 的 `response.body.getReader()` 流式逐块（chunk）解包 SSE 数据，并配合 `AbortController` 绑定终止按钮实现前端主动切断长连接。
   - 在 `frontend/` 目录下运行 `npm run dev` 即可开始开发联调（运行于 http://localhost:3000）。
@@ -327,25 +314,19 @@ npm run build
 - Rerank 相关：`RERANK_MODEL`、`RERANK_BINDING_HOST`、`RERANK_API_KEY`
 - Milvus：`MILVUS_HOST`、`MILVUS_PORT`、`MILVUS_COLLECTION`
 - 数据库缓存：`DATABASE_URL`、`REDIS_URL`
-- 鉴权相关：`JWT_SECRET_KEY`、`ADMIN_INVITE_CODE`、`JWT_ALGORITHM`、`JWT_EXPIRE_MINUTES`
-- 密码参数：`PASSWORD_PBKDF2_ROUNDS`
 - 检索候选池：`RETRIEVAL_CANDIDATE_K`（固定候选数，优先）、`RETRIEVAL_CANDIDATE_MULTIPLIER`（未设 K 时 `max(top_k × 倍数, top_k)`，默认 `3`）
 - Auto-merging：`AUTO_MERGE_ENABLED`、`AUTO_MERGE_THRESHOLD`、`LEAF_RETRIEVE_LEVEL`
 - 工具：`AMAP_WEATHER_API`、`AMAP_API_KEY`
 
 ## API 速览
-- 鉴权
-  - `POST /auth/register`：注册（支持普通用户/管理员邀请码模式）。
-  - `POST /auth/login`：登录，返回 Bearer Token。
-  - `GET /auth/me`：获取当前登录用户信息。
 - 聊天
   - `POST /chat`：聊天（非流式），入参 `message`、`session_id`。
   - `POST /chat/stream`：聊天（流式 SSE），入参同上，返回 `text/event-stream`。
-- 会话（用户隔离）
-  - `GET /sessions`：列出当前用户会话。
-  - `GET /sessions/{session_id}`：拉取当前用户某会话消息。
-  - `DELETE /sessions/{session_id}`：删除当前用户会话。
-- 文档（管理员权限）
+- 会话（共享工作区）
+  - `GET /sessions`：列出全部会话。
+  - `GET /sessions/{session_id}`：拉取指定会话消息。
+  - `DELETE /sessions/{session_id}`：删除指定会话。
+- 文档
   - `GET /documents`：列出已入库文档及 chunk 数。
   - `POST /documents/upload`：上传并向量化 PDF/Word/Excel。
   - `DELETE /documents/{filename}`：删除指定文档向量数据（会先按文件名分页拉取 chunk 文本并同步扣减 BM25 持久化统计，再删 Milvus）。
@@ -373,7 +354,6 @@ FastAPI 运行在单线程的 asyncio Event Loop 上。为了不阻塞主线程�
 ```python
 # 核心代码摘要
 ctx = ChatRequestContext.for_stream(
-    user_id=user_id,
     session_id=session_id,
     output_queue=output_queue,
 )
@@ -513,7 +493,7 @@ StreamingResponse(
 
 ### 2026-06-12 前端单文件 CDN 重构为 Vite + Vue 3 + TS 工程化组件架构
 - **现代化架构重构**：将以前臃肿的多合一 HTML/CDN 页面重构为标准的 **Vite + Vue 3 (SFC) + TypeScript + Pinia + Axios + Sass** 现代化工程项目，全部组件和状态高度解耦。
-- **状态及路由管理**：利用 Pinia 建立了 `auth`、`sessions`、`chat`、`documents` 四大 Store 共享核心数据。
+- **状态及路由管理**：利用 Pinia 建立了 `sessions`、`chat`、`documents` 三大 Store 共享核心数据。
 - **高阶交互界面**：增加流式上传进度详情卡片、上传成功后卡片自动折叠、References 参考文献精美折叠展示、Thinking 气泡流畅过度等。
 
 ### 2026-06-03 自适应复杂问题分解、并行 Sub-Agent 与精排门控
@@ -531,14 +511,10 @@ StreamingResponse(
 - **模块化 Pipeline**：重构 RAG 底层实现，将 RAG 流程收拢为高可控的“召回 -> 自动合并 -> 语义重排”流水线，收口统一的参数配置与多级 RAG Trace 追踪。
 - **去重合并高分保留**：修复了在执行 L3 -> L2/L1 叶子向上合并时，在循环内聚合 Rank 分数的算法，防止去重过程中丢失高置信度召回分。
 
-### 2026-03-21 后端服务建设升级（认证 + 数据库 + 缓存）
-- 新增认证与权限模块：注册、登录、JWT、管理员权限控制。
-- 聊天历史从本地 JSON 迁移到 PostgreSQL，按用户隔离会话数据。
+### 2026-03-21 后端服务建设升级（数据库 + 缓存）
+- 聊天历史从本地 JSON 迁移到 PostgreSQL。
 - 父级分块存储从本地 JSON 迁移到 PostgreSQL。
 - 引入 Redis 缓存会话与父文档，提高读取性能并降低数据库压力。
-- API 升级为 Token 驱动，移除前端直接传 `user_id` 的历史模式。
-- 文档管理接口收敛到管理员角色，避免普通用户误操作知识库。
-- 密码哈希方案升级为 PBKDF2-SHA256，兼容历史 bcrypt 校验。
 
 ### 2026-03-13 三级分块与 Auto-merging 升级
 - 新增三级滑动窗口分块（L1/L2/L3），并为分块写入层级元数据。

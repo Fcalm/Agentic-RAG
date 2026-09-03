@@ -1,5 +1,4 @@
 import { defineStore } from 'pinia';
-import { useAuthStore } from './auth';
 import { useSessionStore } from './sessions';
 import api from '@/utils/api';
 import type { Message, RagStep, GroupedRagStep, HitlRequest, RagTrace } from '@/types/chat';
@@ -303,13 +302,7 @@ export const useChatStore = defineStore('chat', {
     },
 
     async handleSend() {
-      const authStore = useAuthStore();
       const sessionStore = useSessionStore();
-
-      if (!authStore.isAuthenticated) {
-        alert('请先登录');
-        return;
-      }
 
       const text = this.userInput.trim();
       if (!text) return;
@@ -379,7 +372,6 @@ export const useChatStore = defineStore('chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${authStore.token}`,
           },
           body: JSON.stringify({
             message: text,
@@ -389,10 +381,6 @@ export const useChatStore = defineStore('chat', {
         });
 
         if (!response.ok) {
-          if (response.status === 401) {
-            authStore.handleLogout();
-            throw new Error('登录已过期，请重新登录');
-          }
           throw new Error(`HTTP ${response.status}`);
         }
 

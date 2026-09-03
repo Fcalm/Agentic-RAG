@@ -25,7 +25,7 @@ class FakeStructuredModel:
     def __init__(self, handler):
         self.handler = handler
 
-    def with_structured_output(self, schema):
+    def with_structured_output(self, schema, **_kwargs):
         return FakeStructuredInvoker(schema, self.handler)
 
 
@@ -96,7 +96,7 @@ def _meta(count):
 
 class RagShortCircuitTests(unittest.TestCase):
     def _ctx(self):
-        return ChatRequestContext.for_sync(user_id="u", session_id="s")
+        return ChatRequestContext.for_sync(session_id="s")
 
     def test_grader_uses_only_grade_model(self):
         pipeline = load_pipeline(
